@@ -112,7 +112,7 @@ class Scraper:
 # test out the class below
 
 if __name__ == '__main__':
-   # args = args()
+    args = args()
     params = {'titles': ['data analyst', 'data scientist'], 'sites': 'all', 'date': '2025-10-01', 'location': {'country': 'US', 'cities': ['San Francisco', 'New York']},
           'levels': {'seek': ['senior'], 'avoid': ['principal']}, 'num_results': 5, 'api_key': api_key}
     obj = Scraper(params)
