@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/ python3
 
 
 # Scrape all the job websites
@@ -19,6 +19,7 @@ import logging
 import sqlite3
 import pandas as pd
 import json
+import sys
 from serpapi import GoogleSearch as GS
 
 pd.set_option('display.max_columns', None)
@@ -37,8 +38,7 @@ def args():
     parser = argparse.ArgumentParser(prog = 'scraper.py', description = 'Python script to scrape job boards and automate the application process.')
     parser.add_argument('-f', '--file', help = 'Specify a .json file containing the search parameters.', required = True, metavar = 'JSON')
     parser.add_argument('-c', '--csv', help = 'Generate a .csv file of the scraped data.', action = 'store_true', required = False)
-    parser.parse_args()
-    return parser
+    return parser.parse_args()
 
 api_key = "0432d3f23664d17e7b661aae26d63f02e6b11f41f162883fbd3717c1150075ba"
 
@@ -69,18 +69,23 @@ api_key = "0432d3f23664d17e7b661aae26d63f02e6b11f41f162883fbd3717c1150075ba"
 # for result in results['organic_results']:
 
 class Scraper:
-    def __init__(self, params):
+    def __init__(self, json):
         self.logger = logger()
+        # with open(json, 'r') as data:
+           # params = json.load(data)
         self.titles = params['titles']
         self.sites = params['sites']
         self.date = params['date']
-        self.api_key = params['api_key']
+        self.serp_api_key = params['api_key']['serp']
+       # self.gpt_api_key = params['api_key']['gpt']
+        self.countries = params['location']['countries'].keys()
+        self.country_codes = params['location']['countries'].values()
+        self.compensation = params.get('compensation')
         self.work_mode = params.get('work_mode')
-        self.country = params.get('location', {}).get('country')
         self.cities = params.get('location', {}).get('cities')
         self.levels_want = params.get('levels', {}).get('seek')
         self.levels_avoid = params.get('levels', {}).get('avoid')
-        self.num_results = params.get('num_results', 10)
+        self.num_results = params.get('num_results', [10] * len(self.countries))
 
     def str_constructor(self):
         all_sites = ['greenhouse.io', 'jobs.ashbyhq.com', 'jobs.lever.co'] # More sites to be added later!
@@ -91,33 +96,55 @@ class Scraper:
             first = ' OR '.join([f'site:{site}' for site in self.sites])
         second = f'("{" OR ".join(self.titles)}")'
         third = f'after:{self.date}'
-        query =  first + ' ' + second + ' ' + third
+        string =  first + ' ' + second + ' ' + third
         if self.work_mode:
-            query += f' ("{" OR ".join(self.work_mode)}")'
+            string += f' ("{" OR ".join(self.work_mode)}")'
         if self.cities and not self.work_mode != ['Remote']:
-            query += f' ("{" OR ".join(self.cities)}")'
+            string += f' ("{" OR ".join(self.cities)}")'
         if self.levels_want:
             want_q = " ".join(f'"{level}"' for level in self.levels_want)
-            query += ' ' + want_q
+            string += ' ' + want_q
         if self.levels_avoid:
             avoid_q = " ".join(f'-"{level}"' for level in self.levels_avoid)
-            query += ' ' + avoid_q
+            string += ' ' + avoid_q
 
-        return query
+        return string
 
     def google_search(self):
+        df_list = []
         self.logger.info('Collecting Google Search Results...')
-        pass
+        for c, cc, num in zip(self.countries, self.country_codes, self.num_results):
+            query = {
+                'engine' : 'google',
+                'q' : self.str_constructor,
+                'location' : c,
+                'gl' : cc,
+                'api_key': self.serp_api_key,
+                'num' : num
+            }
+            results = GS(query).get_dict()['organic_results']
+            while len(results) > num: # num is not guaranteed to work, for some reason...
+                results.popitem() # only in python 3.7+
+            df_list.append(results)
+        df = pd.concat(df_list)
+
+        return df
+
+
+
+
+
+
+
 
 # test out the class below
 
 if __name__ == '__main__':
     args = args()
-    params = {'titles': ['data analyst', 'data scientist'], 'sites': 'all', 'date': '2025-10-01', 'location': {'country': 'US', 'cities': ['San Francisco', 'New York']},
-          'levels': {'seek': ['senior'], 'avoid': ['principal']}, 'num_results': 5, 'api_key': api_key}
+    params = {'titles': ['data analyst', 'data scientist'], 'sites': 'all', 'date': '2025-10-01', 'location': {'countries': {'United States' : 'us'}, 'cities': ['San Francisco', 'New York']},
+          'levels': {'seek': ['senior'], 'avoid': ['principal']}, 'num_results': [5], 'api_key': {'serp': api_key}}
     obj = Scraper(params)
-    print(obj.str_constructor())
+    if args.csv:
+        data = obj.google_search()
+        data.to_csv('output.csv', index = False)
 
-# This is a test!!!
-
-# Hello!
