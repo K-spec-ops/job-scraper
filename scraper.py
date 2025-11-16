@@ -40,110 +40,82 @@ def args():
     parser.add_argument('-c', '--csv', help = 'Generate a .csv file of the scraped data.', action = 'store_true', required = False)
     return parser.parse_args()
 
-api_key = "0432d3f23664d17e7b661aae26d63f02e6b11f41f162883fbd3717c1150075ba"
-
-# params = {
-
-#    "engine": "google",
-#    "q": "site:greenhouse.io intitle:'data analyst' after:2025-10-01 -senior",
-#    "gl": "us",
-#    "num": 5,
-#   "api_key": api_key
-
-#}
-
-#search = GS(params)
-#results = search.get_dict()
-
-#print(results['organic_results'][0]['snippet'])
-#with open('results.json', 'w') as outfile:
-#    logger.info('Writing results to results.json')
-#    json.dump(results, outfile, )
-#print(results['organic_results'])
-
-#df = pd.DataFrame(results['organic_results'])
-# Get the first 6 column names and select them
-#print(df.iloc[:, :3])
-#print(df[df.columns[:6]])
-
-# for result in results['organic_results']:
-
 class Scraper:
-    def __init__(self, json):
+    def __init__(self, file):
         self.logger = logger()
-        # with open(json, 'r') as data:
-           # params = json.load(data)
+        with open(file, 'r') as obj:
+           params = json.load(obj)
         self.titles = params['titles']
         self.sites = params['sites']
         self.date = params['date']
-        self.serp_api_key = params['api_key']['serp']
+        self.serp_api_key = params['api_keys']['serp']
        # self.gpt_api_key = params['api_key']['gpt']
-        self.countries = params['location']['countries'].keys()
-        self.country_codes = params['location']['countries'].values()
+        self.location = params['location']
         self.compensation = params.get('compensation')
         self.work_mode = params.get('work_mode')
-        self.cities = params.get('location', {}).get('cities')
+        self.cities = self.location.get('cities')
         self.levels_want = params.get('levels', {}).get('seek')
         self.levels_avoid = params.get('levels', {}).get('avoid')
-        self.num_results = params.get('num_results', [10] * len(self.countries))
+        self.num_results = params.get('num_results', [10] * len(self.location))
 
-    def str_constructor(self):
+    def get_country_code(self, country):
+            url = f"https://restcountries.com/v3.1/name/{country}?fullText=true&fields=cca2"
+            response = requests.get(url)
+            data = response.json()
+            response.raise_for_status()
+            return data[0]['cca2'].lower()
+
+    def str_constructor(self, country, cities = None):
         all_sites = ['greenhouse.io', 'jobs.ashbyhq.com', 'jobs.lever.co'] # More sites to be added later!
         self.logger.info('Constructing Search String...')
         if self.sites == 'all':
             first = ' OR '.join([f'site:{site}' for site in all_sites])
         else:
             first = ' OR '.join([f'site:{site}' for site in self.sites])
-        second = f'("{" OR ".join(self.titles)}")'
+        second = f'({" OR ".join("\"{}\"".format(t) for t in self.titles)})'
         third = f'after:{self.date}'
         string =  first + ' ' + second + ' ' + third
         if self.work_mode:
             string += f' ("{" OR ".join(self.work_mode)}")'
-        if self.cities and not self.work_mode != ['Remote']:
-            string += f' ("{" OR ".join(self.cities)}")'
+        if cities and self.work_mode != ['Remote']:
+            string += f' ({" OR ".join(cities)})' 
+        string += f' "{country}"' 
         if self.levels_want:
             want_q = " ".join(f'"{level}"' for level in self.levels_want)
             string += ' ' + want_q
         if self.levels_avoid:
             avoid_q = " ".join(f'-"{level}"' for level in self.levels_avoid)
             string += ' ' + avoid_q
-
         return string
 
     def google_search(self):
         df_list = []
         self.logger.info('Collecting Google Search Results...')
-        for c, cc, num in zip(self.countries, self.country_codes, self.num_results):
+    
+        for num, c in zip(self.num_results, self.location.keys()):
             query = {
-                'engine' : 'google',
-                'q' : self.str_constructor,
-                'location' : c,
-                'gl' : cc,
+                'engine': 'google',
+                'q': self.str_constructor(c, self.location[c]),
+                'location': c,
+                'gl': self.get_country_code(c),
                 'api_key': self.serp_api_key,
-                'num' : num
-            }
-            results = GS(query).get_dict()['organic_results']
-            while len(results) > num: # num is not guaranteed to work, for some reason...
-                results.popitem() # only in python 3.7+
-            df_list.append(results)
+                'num': num
+                    }
+    
+            results = GS(query).get_dict().get('organic_results', [])
+            results = results[:num]  # num isn't guaranteed to work, for some reason...
+            df_list.append(pd.DataFrame(results))
+
         df = pd.concat(df_list)
-
+        df.drop(['redirect_link', 'displayed_link', 'favicon', 'snippet'], axis = 1, inplace = True)
+        df['position'] = range(1, len(df) + 1)
         return df
-
-
-
-
-
-
-
-
+    
 # test out the class below
 
 if __name__ == '__main__':
     args = args()
-    params = {'titles': ['data analyst', 'data scientist'], 'sites': 'all', 'date': '2025-10-01', 'location': {'countries': {'United States' : 'us'}, 'cities': ['San Francisco', 'New York']},
-          'levels': {'seek': ['senior'], 'avoid': ['principal']}, 'num_results': [5], 'api_key': {'serp': api_key}}
-    obj = Scraper(params)
+    obj = Scraper(args.file)
     if args.csv:
         data = obj.google_search()
         data.to_csv('output.csv', index = False)
