@@ -1,0 +1,16 @@
+{
+    "titles": ["data scientist", "data analyst"],
+    "sites": "all",
+    "date": "2025-11-01",
+    "location": {"Canada": ["Montreal", "British Columbia", "Ontario"]},
+    "work_mode": ["hybrid", "remote"],
+    "compensation": 50000,
+    "levels": {
+        "seek": [],
+        "avoid": ["principal"]},
+    "results_per_page": [8],
+    "max_pages": 3,
+    "api_keys": {
+        "serp": "placeholder",
+        "gpt": "placeholder"}
+}
